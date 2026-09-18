@@ -1,9 +1,14 @@
 #include "UI.h"
+#include "../state.h"
+#include "./memory/process.h"
+
 
 namespace UI {
 
-enum class Tab { Aimbot, Wallhack, Triggerbot, Settings };
-static Tab g_tab = Tab::Aimbot;
+
+
+
+
 
 static void ApplyStyle() {
     ImGuiStyle& s = ImGui::GetStyle();
@@ -36,32 +41,18 @@ static void ApplyStyle() {
     c[ImGuiCol_Separator]      = { 0.20f, 0.20f, 0.25f, 1.0f };
 }
 
-static void TabButton(const char* label, Tab id) {
-    bool active = (g_tab == id);
-    if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.60f, 1.0f, 1.0f));
-    else        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.20f, 1.0f));
-    if (ImGui::Button(label, { 120.0f, 30.0f })) g_tab = id;
-    ImGui::PopStyleColor();
-    ImGui::SameLine();
-}
 
-static void RenderAimbot() {
-    ImGui::TextDisabled("// Aimbot settings");
-}
-static void RenderWallhack() {
-    ImGui::TextDisabled("// Wallhack settings");
-}
-static void RenderTriggerbot() {
-    ImGui::TextDisabled("// Triggerbot settings");
-}
-static void RenderSettings() {
-    ImGui::TextDisabled("// Settings");
-}
 
-void Init(HWND hwnd, ID3D11Device* device, ID3D11DeviceContext* context) {
+
+    void Init(HWND hwnd, ID3D11Device* device, ID3D11DeviceContext* context) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGui::GetIO().IniFilename = nullptr;
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    // Вмикаємо можливість виносити вікна за межі програми
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+
     ApplyStyle();
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(device, context);
@@ -73,27 +64,102 @@ void NewFrame() {
     ImGui::NewFrame();
 }
 
-void Render() {
-    ImGui::SetNextWindowPos({0, 0}, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
-    ImGui::Begin("memory scanner", nullptr,
-    ImGuiWindowFlags_NoCollapse    |
-    ImGuiWindowFlags_NoScrollbar   |
-    ImGuiWindowFlags_NoMove        |
-    ImGuiWindowFlags_NoResize      |
-    ImGuiWindowFlags_NoBringToFrontOnFocus);
+    void Render() {
 
+
+    //  main window тут ------------------------------------------------
+
+    // координати вікон
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(viewport->WorkSize, ImGuiCond_Always);
+
+
+
+    ImGui::Begin("memory scanner", nullptr,
+        ImGuiWindowFlags_NoTitleBar    |
+        ImGuiWindowFlags_NoCollapse    |
+        ImGuiWindowFlags_NoScrollbar   |
+        ImGuiWindowFlags_NoMove        |
+        ImGuiWindowFlags_NoResize      |
+        ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+
+//кнопка
+    if (ImGui::Button("proces", ImVec2(90.0f, 40.0f))) {
+        UIState::showProcessWindow = true;
+    }
+        ImGui::SetCursorPos(ImVec2(110, 25));
+    ImGui::Text("select process: %s", UIState::selectedProcessName.c_str());
 
 
 
 
 
     ImGui::End();
-}
 
-void EndFrame() {
+
+
+
+    //  Вікно списку процесів ------------------------------------------------
+    if (UIState::showProcessWindow) {
+        ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_FirstUseEver);
+
+        if (ImGui::Begin("Process List", &UIState::showProcessWindow)) {
+
+
+            static std::vector<ProcessInfo> processes = GetSortedProcesses();
+
+            if (ImGui::Button("Refresh List")) {
+                processes = GetSortedProcesses();
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::BeginChild("ProcessScrollArea", ImVec2(0, 0), true)) {
+                for (const auto& proc : processes) {
+                    char buf[256];
+                    WideCharToMultiByte(CP_UTF8, 0, proc.name.c_str(), -1, buf, sizeof(buf), nullptr, nullptr);
+
+
+                    char label[300];
+                    snprintf(label, sizeof(label), "%s##%lu", buf, proc.processID);
+
+                    if (ImGui::Selectable(label)) {
+
+                        UIState::selectedProcessID = proc.processID;
+
+
+                        UIState::selectedProcessName = buf;
+
+
+                        UIState::showProcessWindow = false;
+                    }
+
+
+
+
+                }
+            }
+            ImGui::EndChild();
+
+        }
+        ImGui::End();
+
+
+    }
+}
+    //---------------------------- END ----------------------------------
+    void EndFrame() {
     ImGui::Render();
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
+
+    // Оновлюємо та малюємо відірвані вікна
+    if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+    }
 }
 
 void Shutdown() {
