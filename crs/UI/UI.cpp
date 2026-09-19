@@ -129,11 +129,14 @@ void NewFrame() {
 
                         UIState::selectedProcessID = proc.processID;
 
-
                         UIState::selectedProcessName = buf;
 
-
                         UIState::showProcessWindow = false;
+
+
+                        // logik memory 
+
+
                     }
 
 
