@@ -1,7 +1,7 @@
 #include "UI.h"
 #include "../state.h"
 #include "./memory/process.h"
-
+#include "./memory/memory_read.h"
 
 namespace UI {
 
@@ -66,6 +66,7 @@ void NewFrame() {
 
     void Render() {
 
+    MemoryReader::UpdateFrozenValues();
 
     //  main window тут ------------------------------------------------
 
@@ -89,16 +90,138 @@ void NewFrame() {
     if (ImGui::Button("proces", ImVec2(90.0f, 40.0f))) {
         UIState::showProcessWindow = true;
     }
-        ImGui::SetCursorPos(ImVec2(110, 25));
-    ImGui::Text("select process: %s", UIState::selectedProcessName.c_str());
+
+
+
+   // ... початок функції Render() та кнопка вибору процесу ...
+
+    ImGui::Text("Selected Process: %s (PID: %lu)",
+    UIState::selectedProcessName.c_str(),
+    UIState::selectedProcessID);
+
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // ==============================================================
+    // ПОЧАТОК ПАНЕЛІ ВКЛАДОК
+    // ==============================================================
+    if (ImGui::BeginTabBar("MainTabBar")) {
+
+        // ----------------------------------------------------------
+        // ВКЛАДКА 1: SCANNER (Тут тепер лежить твій поточний код)
+        // ----------------------------------------------------------
+        if (ImGui::BeginTabItem("Scanner")) {
+
+            ImGui::Spacing();
+
+            // Твої поля вводу
+            ImGui::SetNextItemWidth(200.0f);
+            ImGui::InputText("Value", UIState::searchValue, IM_ARRAYSIZE(UIState::searchValue));
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(180.0f);
+            ImGui::Combo("Type", &UIState::selectedTypeIndex, UIState::dataTypes, IM_ARRAYSIZE(UIState::dataTypes));
+            ImGui::Spacing();
+
+            // Твої кнопки
+            if (ImGui::Button("First Scan", ImVec2(120, 35))) {
+                MemoryReader::PerformFirstScan();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Next Scan", ImVec2(120, 35))) {
+                MemoryReader::PerformNextScan();
+            }
+            ImGui::Spacing();
+            ImGui::Separator();
+
+            // Твоя таблиця
+            ImVec2 tableSize = ImVec2(0.0f, 0.0f);
+         if (ImGui::BeginTable("ScanResultsTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY, ImVec2(0.0f, 0.0f))) {
+
+                // Налаштовуємо колонки (робимо колонку Freeze вузькою)
+                ImGui::TableSetupColumn("Freeze", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+                ImGui::TableSetupColumn("Address");
+                ImGui::TableSetupColumn("Value");
+                ImGui::TableSetupColumn("Previous");
+                ImGui::TableHeadersRow();
+
+                // ВАЖЛИВО: використовуємо auto& (з амперсандом), щоб змінювати реальні дані, а не копію
+                for (auto& result : UIState::scanResults) {
+                    ImGui::PushID(result.address);
+                    ImGui::TableNextRow();
+
+                    // Колонка 0: Чекбокс заморозки
+                    ImGui::TableSetColumnIndex(0);
+                    // "##" ховає текст ярлика, залишаючи лише саму галочку
+                    ImGui::Checkbox("##freeze", &result.isFrozen);
+
+                    // Колонка 1: Адреса (з контекстним меню)
+                    ImGui::TableSetColumnIndex(1);
+                    char addressText[32];
+                    snprintf(addressText, sizeof(addressText), "%08X", result.address);
+                    ImGui::Text("%s", addressText);
+
+                    if (ImGui::BeginPopupContextItem("RowContextMenu")) {
+                        if (ImGui::Selectable("Copy Address")) ImGui::SetClipboardText(addressText);
+                        if (ImGui::Selectable("Copy Value")) ImGui::SetClipboardText(result.currentValue.c_str());
+                        ImGui::EndPopup();
+                    }
+
+                    // Колонка 2: Поточне значення
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::Text("%s", result.currentValue.c_str());
+
+                    // Колонка 3: Попереднє значення
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::Text("%s", result.previousValue.c_str());
+
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+
+            // ЗАКРИВАЄМО ВКАДКУ SCANNER
+            ImGui::EndTabItem();
+        }
+
+        // ==========================================
+        // ВКЛАДКА 2: WRITE
+        // ==========================================
+        if (ImGui::BeginTabItem("Write")) {
+            static char writeAddress[64] = "";
+            static char writeValue[64] = "";
+
+            ImGui::Text("Manual Memory Write");
+            ImGui::Spacing();
+
+            ImGui::InputText("Address (HEX)", writeAddress, IM_ARRAYSIZE(writeAddress));
+            ImGui::InputText("Value", writeValue, IM_ARRAYSIZE(writeValue));
+
+            if (ImGui::Button("Write to Memory", ImVec2(150, 30))) {
+                try {
+
+                    uintptr_t addr = std::stoull(writeAddress, nullptr, 16);
+
+                    // Перетворюємо введений текст значення на число int
+                    int val = std::stoi(writeValue);
+
+                    // Викликаємо нашу функцію бекенду
+                    MemoryReader::WriteValue(addr, val);
+
+                } catch (...) {
+
+                }
+            }
+
+            ImGui::EndTabItem();
+        }
 
 
 
 
+        ImGui::EndTabBar();
+    }
 
     ImGui::End();
-
-
 
 
     //  Вікно списку процесів ------------------------------------------------
@@ -106,7 +229,13 @@ void NewFrame() {
         ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_FirstUseEver);
 
         if (ImGui::Begin("Process List", &UIState::showProcessWindow)) {
+            // Створюємо фільтр (static, щоб він запам'ятовував введений текст між кадрами)
+            static ImGuiTextFilter processFilter;
 
+            // Малюємо поле вводу (зверху списку)
+            processFilter.Draw("Search");
+
+            ImGui::Separator();
 
             static std::vector<ProcessInfo> processes = GetSortedProcesses();
 
@@ -118,30 +247,27 @@ void NewFrame() {
 
             if (ImGui::BeginChild("ProcessScrollArea", ImVec2(0, 0), true)) {
                 for (const auto& proc : processes) {
+                    // Конвертуємо wstring у char масив (UTF-8)
                     char buf[256];
                     WideCharToMultiByte(CP_UTF8, 0, proc.name.c_str(), -1, buf, sizeof(buf), nullptr, nullptr);
 
+                    // --- САМЕ ТУТ ПРАЦЮЄ ФІЛЬТР ---
+                    // Якщо назва процесу (buf) не містить введеного тексту, переходимо до наступного
+                    if (!processFilter.PassFilter(buf)) {
+                        continue;
+                    }
+                    // ------------------------------
 
                     char label[300];
                     snprintf(label, sizeof(label), "%s##%lu", buf, proc.processID);
 
                     if (ImGui::Selectable(label)) {
-
                         UIState::selectedProcessID = proc.processID;
-
                         UIState::selectedProcessName = buf;
-
                         UIState::showProcessWindow = false;
 
-
-                        // logik memory 
-
-
+                        // logik memory
                     }
-
-
-
-
                 }
             }
             ImGui::EndChild();

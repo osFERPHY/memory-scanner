@@ -17,7 +17,8 @@ set(PROJECT_SOURCES
         crs/main.cpp
         crs/Core/Application.cpp
         crs/UI/UI.cpp
-        crs/Memory/process.cpp)
+        crs/Memory/process.cpp
+        crs/Memory/memory_read.cpp)
 
 
 add_executable(memory_scanner ${PROJECT_SOURCES} ${IMGUI_SOURCES})
